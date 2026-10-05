@@ -43,10 +43,16 @@ def _source_type(request):
     return request.query_params.get('source_type')
 
 
+def _active_device_ids():
+    return [str(i) for i in RegisteredDevice.objects.filter(is_active=True).values_list('id', flat=True)]
+
+
 def _filter_by_source_and_site(request, qs):
     source_type = _source_type(request)
     if source_type:
         qs = qs.filter(source_type=source_type)
+    if source_type == 'home_network':
+        qs = qs.filter(registered_id__in=_active_device_ids())
     registered_id = request.query_params.get('registered_id') or request.query_params.get('site_id')
     if registered_id and str(registered_id).lower() not in ('all', '0', 'none', ''):
         try:
@@ -168,9 +174,11 @@ class FlowIngestView(APIView):
                 except Exception:
                     pass
 
+        # Skip the gateway (Windows ICS host): every device talks to it, so matching it would let unregistered devices in.
         device_ip_map = {
             device.ip_address: str(device.id)
             for device in RegisteredDevice.objects.filter(is_active=True)
+            if device.ip_address != '192.168.137.1'
         }
 
         for item in flows:
@@ -293,6 +301,8 @@ class DashboardStatsView(APIView):
         registered_id = request.query_params.get('registered_id') or request.query_params.get('site_id')
         if source_type:
             incident_qs = incident_qs.filter(flow__source_type=source_type)
+        if source_type == 'home_network':
+            incident_qs = incident_qs.filter(flow__registered_id__in=_active_device_ids())
         if registered_id and str(registered_id).lower() not in ('all', '0', 'none', ''):
             try:
                 from .models import RegisteredSite
@@ -882,6 +892,8 @@ class IncidentTimelineView(APIView):
         registered_id = request.query_params.get('registered_id') or request.query_params.get('site_id')
         if source_type:
             qs = qs.filter(flow__source_type=source_type)
+        if source_type == 'home_network':
+            qs = qs.filter(flow__registered_id__in=_active_device_ids())
         if registered_id and str(registered_id).lower() not in ('all', '0', 'none', ''):
             try:
                 from .models import RegisteredSite
