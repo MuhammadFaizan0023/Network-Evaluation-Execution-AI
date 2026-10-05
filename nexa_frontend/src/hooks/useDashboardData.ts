@@ -273,7 +273,7 @@ export const useDashboardData = () => {
         fetch(`${API_BASE_URL}/dashboard/traffic-volume/?source_type=${sourceType}&minutes=60${siteParam}`).catch(() => null),
         fetch(`${API_BASE_URL}/dashboard/top-attackers/?source_type=${sourceType}&limit=5${siteParam}`).catch(() => null),
         fetch(`${API_BASE_URL}/dashboard/top-targets/?source_type=${sourceType}&limit=5${siteParam}`).catch(() => null),
-        fetch(`${API_BASE_URL}/dashboard/pipeline-status/`).catch(() => null),
+        fetch(`${API_BASE_URL}/dashboard/pipeline-status/?source_type=${sourceType}`).catch(() => null),
         fetch(`${API_BASE_URL}/alerts/?source_type=${sourceType}&page=${page}&limit=${pageSize}${siteParam}`).catch(() => null),
       ]);
 

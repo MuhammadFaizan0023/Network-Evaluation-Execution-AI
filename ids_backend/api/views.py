@@ -494,6 +494,14 @@ class ThreatBreakdownView(APIView):
 class PipelineStatusView(APIView):
     def get(self, request):
         health = SystemHealth.objects.first()
+        flows_per_minute = health.flows_per_minute if health else 0
+        alerts_per_minute = health.alerts_per_minute if health else 0
+        # Both consumers report into the same SystemHealth rows, so per-source rates come from saved flows.
+        if _source_type(request):
+            recent = FlowRecord.objects.filter(created_at__gte=timezone.now() - timedelta(minutes=1))
+            recent = _filter_by_source_and_site(request, recent)
+            flows_per_minute = recent.count()
+            alerts_per_minute = recent.filter(is_alert=True).count()
         if not health:
             return Response(
                 {
@@ -501,21 +509,21 @@ class PipelineStatusView(APIView):
                     'ml_consumer': {'status': False, 'label': 'Down', 'last_seen': None},
                     'cicflowmeter': {'status': False, 'label': 'Down'},
                     'tcpdump': {'status': False, 'label': 'Down'},
-                    'flows_per_minute': 0,
-                    'alerts_per_minute': 0,
+                    'flows_per_minute': flows_per_minute,
+                    'alerts_per_minute': alerts_per_minute,
                 }
             )
         ml_seen = health.timestamp
         ml_ok = bool(health.ml_consumer_status and ml_seen and ml_seen > timezone.now() - timedelta(minutes=2))
-        
+
         return Response(
             {
                 'kafka': {'status': ml_ok, 'label': 'Running' if ml_ok else 'Down'},
                 'ml_consumer': {'status': ml_ok, 'label': 'Running' if ml_ok else 'Down', 'last_seen': ml_seen},
                 'cicflowmeter': {'status': ml_ok, 'label': 'Running' if ml_ok else 'Down'},
                 'tcpdump': {'status': ml_ok, 'label': 'Running' if ml_ok else 'Down'},
-                'flows_per_minute': health.flows_per_minute,
-                'alerts_per_minute': health.alerts_per_minute,
+                'flows_per_minute': flows_per_minute,
+                'alerts_per_minute': alerts_per_minute,
             }
         )
 
