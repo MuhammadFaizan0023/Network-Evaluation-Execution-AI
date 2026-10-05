@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   dvwa:
@@ -125,11 +125,18 @@ services:
     container_name: cicflowmeter
     volumes:
       - ./pcaps:/pcaps:ro
+      - ./pcaps_iot:/pcaps_iot:ro
       - ./flows:/flows
       - ./process_pcaps.sh:/app/process_pcaps.sh:ro
+      - ./flows_iot:/flows_iot
     working_dir: /app
     entrypoint: ["/bin/sh"]
-    command: ["/app/process_pcaps.sh"]
+    command:
+      [
+        "-c",
+        "cp /app/process_pcaps.sh /tmp/run.sh && sed -i 's/\\r$//' /tmp/run.sh && /bin/sh /tmp/run.sh",
+      ]
+
     depends_on:
       - sniffer
     networks:
@@ -140,18 +147,18 @@ services:
     container_name: kafka
     environment:
       KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
-      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:9092'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
-      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
-      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:9092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports:
       - "127.0.0.1:9092:9092"
     volumes:
@@ -159,7 +166,11 @@ services:
     networks:
       - nexa-net
     healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1",
+        ]
       interval: 10s
       timeout: 10s
       retries: 10
@@ -171,11 +182,14 @@ services:
     environment:
       KAFKA_BROKER: kafka:29092
       KAFKA_TOPIC: flows
+      KAFKA_IOT_TOPIC: flows_iot
       FLOWS_DIR: /flows
+      FLOWS_IOT_DIR: /flows_iot
       BATCH_SIZE: 5
       SCAN_INTERVAL: 2
     volumes:
       - ./flows:/flows:ro
+      - ./flows_iot:/flows_iot:ro
     depends_on:
       kafka:
         condition: service_healthy

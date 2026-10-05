@@ -168,6 +168,11 @@ class FlowIngestView(APIView):
                 except Exception:
                     pass
 
+        device_ip_map = {
+            device.ip_address: str(device.id)
+            for device in RegisteredDevice.objects.filter(is_active=True)
+        }
+
         for item in flows:
             src_ip = item.get('src_ip')
             dst_ip = item.get('dst_ip')
@@ -175,15 +180,21 @@ class FlowIngestView(APIView):
                 continue
 
             item['timestamp'] = now
-            matched_site_id = site_ip_map.get(dst_ip) or site_ip_map.get(src_ip)
-            if matched_site_id:
-                item['registered_id'] = matched_site_id
-            elif item.get('registered_id') and str(item['registered_id']).lower() not in ('none', 'null', ''):
-                pass
-            elif (src_ip and src_ip.startswith('172.20.')) or (dst_ip and dst_ip.startswith('172.20.')):
-                item['registered_id'] = '1'
+            if item.get('source_type') == 'home_network':
+                matched_device_id = device_ip_map.get(src_ip) or device_ip_map.get(dst_ip)
+                if not matched_device_id:
+                    continue
+                item['registered_id'] = matched_device_id
             else:
-                item['registered_id'] = None
+                matched_site_id = site_ip_map.get(dst_ip) or site_ip_map.get(src_ip)
+                if matched_site_id:
+                    item['registered_id'] = matched_site_id
+                elif item.get('registered_id') and str(item['registered_id']).lower() not in ('none', 'null', ''):
+                    pass
+                elif (src_ip and src_ip.startswith('172.20.')) or (dst_ip and dst_ip.startswith('172.20.')):
+                    item['registered_id'] = '1'
+                else:
+                    item['registered_id'] = None
 
             if src_ip and src_ip in whitelisted_ips:
                 item['is_alert'] = False

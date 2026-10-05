@@ -514,7 +514,7 @@ def send_to_backend(results):
     try:
         response = requests.post(
             f"{BACKEND_URL}/api/flows/ingest/",
-            json={"flows": results},
+            json={"source_type": SOURCE_TYPE, "flows": results},
             timeout=10
         )
         if response.status_code != 200:
