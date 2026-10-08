@@ -3,7 +3,7 @@
 PCAP_DIR="/pcaps"
 IOT_PCAP_DIR="/pcaps_iot"
 FLOW_DIR="/flows"
-IOT_FLOW_DIR = "/flows_iot"
+IOT_FLOW_DIR="/flows_iot"
 
 SCAN_INTERVAL=15          # seconds between scans
 FLOW_TIMEOUT=300          # max seconds allowed per PCAP (5 min)
@@ -50,7 +50,12 @@ process_directory() {
     fi
 
     base=$(basename "$f" .pcap)
-    final_csv="$output_dir/${base}.csv"
+    csv_name="$base"
+    if [ "$label" = "iot" ]; then
+      csv_name="flows_${base#capture_}"   # capture_00001_X -> flows_00001_X
+    fi
+    final_csv="$output_dir/${csv_name}.csv"
+    legacy_csv="$output_dir/${base}.csv"   # IoT CSVs produced before the rename
     skip_marker="$output_dir/${base}.skip"
     mkdir -p "$output_dir"
 
@@ -60,7 +65,7 @@ process_directory() {
     fi
 
     # Skip already completed files
-    if [ -f "$final_csv" ]; then
+    if [ -f "$final_csv" ] || [ -f "$legacy_csv" ]; then
       continue
     fi
 
@@ -71,12 +76,31 @@ process_directory() {
 
     echo "=== Processing ($label): $f (${filesize} bytes) ==="
 
+    # CICFlowMeter only accepts classic pcap; Wireshark/dumpcap writes pcapng
+    # even when the file is named .pcap. Convert to a temp copy if needed.
+    input_file="$f"
+    converted_file=""
+    magic=$(od -An -tx1 -N4 "$f" 2>/dev/null | tr -d ' \n')
+    if [ "$magic" = "0a0d0d0a" ]; then
+      mkdir -p /tmp/pcap_convert
+      converted_file="/tmp/pcap_convert/${base}.pcap"
+      if editcap -F pcap "$f" "$converted_file"; then
+        input_file="$converted_file"
+        echo "Converted pcapng to pcap: $f"
+      else
+        echo "ERROR: Could not convert pcapng file $f"
+        rm -f "$converted_file"
+        continue
+      fi
+    fi
+
     # Run CICFlowMeter with timeout protection
     timeout "$FLOW_TIMEOUT" java -Djava.library.path=/app/lib/native \
       -cp "/app/CICFlowMeter-4.0.jar:/app/libs/*:/app/lib/native/jnetpcap.jar" \
-      cic.cs.unb.ca.ifm.Cmd "$f" "$output_dir"
+      cic.cs.unb.ca.ifm.Cmd "$input_file" "$output_dir"
 
     status=$?
+    [ -n "$converted_file" ] && rm -f "$converted_file"
 
     if [ "$status" -eq 0 ]; then
       # CICFlowMeter generates ${base}.pcap_Flow.csv or ${base}_Flow.csv

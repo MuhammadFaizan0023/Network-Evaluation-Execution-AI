@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { getAttackColor } from "@/lib/theme";
 import { API_BASE_URL } from "@/lib/api";
 import { toast } from "sonner";
+import { useSource } from "@/components/providers/SourceContext";
 
 interface DetectionScoreCardProps {
   stats: {
@@ -21,7 +22,21 @@ interface DetectionScoreCardProps {
   loading: boolean;
 }
 
+interface AlertRow {
+  id: number;
+  timestamp: string;
+  severity: string;
+  prediction: string;
+  src_ip: string;
+  dst_ip: string;
+  dst_port?: number;
+  protocol?: string;
+  confidence: number;
+  source_type: string;
+}
+
 export default function DetectionScoreCard({ stats, attackTypes, loading }: DetectionScoreCardProps) {
+  const { sourceType, activeSite } = useSource();
   const total = stats?.total_flows || 0;
   const detectionRate = total > 0 ? (stats?.detection_rate || 0) : 0;
 
@@ -40,13 +55,23 @@ export default function DetectionScoreCard({ stats, attackTypes, loading }: Dete
 
   const handleDownload = async () => {
     const toastId = toast.loading("Preparing report…");
+    const scopeLabel = sourceType === "website" ? "website" : "home network";
     try {
-      const res = await fetch(`${API_BASE_URL}/alerts/?limit=100`);
-      if (res.ok) {
+      const siteParam = sourceType === "website" && activeSite ? `&registered_id=${activeSite.id}` : "";
+      // The API caps page size at 50, so walk the pages to export every alert for this tab
+      const MAX_ROWS = 5000;
+      const results: AlertRow[] = [];
+      let res: Response | null = null;
+      for (let page = 1; results.length < MAX_ROWS; page++) {
+        res = await fetch(`${API_BASE_URL}/alerts/?source_type=${sourceType}&limit=50&page=${page}${siteParam}`);
+        if (!res.ok) break;
         const data = await res.json();
-        const results = data.results || [];
+        results.push(...(data.results || []));
+        if (!data.next) break;
+      }
+      if (res?.ok) {
         if (results.length === 0) {
-          toast.warning("No alert data available to download.", { id: toastId });
+          toast.warning(`No ${scopeLabel} alert data available to download.`, { id: toastId });
           return;
         }
         const headers = [
@@ -61,18 +86,7 @@ export default function DetectionScoreCard({ stats, attackTypes, loading }: Dete
           "confidence",
           "source_type",
         ];
-        const rows = results.map((a: {
-          id: number;
-          timestamp: string;
-          severity: string;
-          prediction: string;
-          src_ip: string;
-          dst_ip: string;
-          dst_port?: number;
-          protocol?: string;
-          confidence: number;
-          source_type: string;
-        }) =>
+        const rows = results.map((a) =>
           [
             a.id,
             a.timestamp,
@@ -93,7 +107,7 @@ export default function DetectionScoreCard({ stats, attackTypes, loading }: Dete
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `nexa-alerts-report-${new Date().toISOString().slice(0, 10)}.csv`;
+        link.download = `nexa-${scopeLabel.replace(" ", "-")}-alerts-report-${new Date().toISOString().slice(0, 10)}.csv`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

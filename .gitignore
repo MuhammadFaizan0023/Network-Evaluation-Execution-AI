@@ -29,8 +29,10 @@ local_settings.py
 
 # IDS Pipeline Data (Ignore collected traffic/flows)
 flows/*.csv
+flows_iot/*.csv
 flows/*.csv.tmp
 pcaps/*.pcap
+pcaps_iot/*.pcap
 kali_attacks/session.txt
 cicflowmeter/
 
