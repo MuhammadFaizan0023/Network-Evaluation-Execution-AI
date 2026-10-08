@@ -8,8 +8,10 @@ from kafka.errors import NoBrokersAvailable
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:9092")
 TOPIC = os.getenv("KAFKA_TOPIC", "flows")
 IOT_TOPIC = os.getenv("KAFKA_IOT_TOPIC", "flows_iot")
+TEST_TOPIC = os.getenv("KAFKA_TEST_TOPIC", "flows_iot_test")
 FLOWS_DIR = os.getenv("FLOWS_DIR", "/flows")
 FLOWS_IOT_DIR = os.getenv("FLOWS_IOT_DIR", "/flows_iot")
+FLOWS_TEST_DIR = os.getenv("FLOWS_TEST_DIR", "/flows_iot_test")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "20"))
 SCAN_INTERVAL = int(os.getenv("SCAN_INTERVAL", "15"))
 
@@ -49,9 +51,11 @@ def send_batch(rows, target_topic):
 print("Kafka CSV Producer started")
 print(f"Watching directory: {FLOWS_DIR}")
 print(f"Watching IoT directory: {FLOWS_IOT_DIR}")
+print(f"Watching IoT test directory: {FLOWS_TEST_DIR}")
 print(f"Kafka broker: {KAFKA_BROKER}")
 print(f"Default Topic: {TOPIC}")
 print(f"IoT Topic: {IOT_TOPIC}")
+print(f"IoT Test Topic: {TEST_TOPIC}")
 print(f"Batch size: {BATCH_SIZE}")
 
 def process_directory(directory, target_topic):
@@ -91,6 +95,7 @@ while True:
     try:
         process_directory(FLOWS_DIR, TOPIC)
         process_directory(FLOWS_IOT_DIR, IOT_TOPIC)
+        process_directory(FLOWS_TEST_DIR, TEST_TOPIC)
         time.sleep(SCAN_INTERVAL)
     except KeyboardInterrupt:
         print("\nShutdown signal received")

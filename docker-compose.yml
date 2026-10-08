@@ -38,9 +38,9 @@ services:
       BRIDGE_DEV=\$$(ip route show 172.20.0.0/16 2>/dev/null | awk '{print \$$3}');
       echo \"Detected nexa-net bridge: \$$BRIDGE_DEV\";
       if [ -n \"\$$BRIDGE_DEV\" ]; then
-        tcpdump -i \$$BRIDGE_DEV 'not host 168.63.129.16 and not host 127.0.0.1 and not port 22 and not port 29092 and not port 9092 and not port 9093 and not port 8000 and not port 3000 and not port 3306' -w /pcaps/traffic_br_%Y%m%d_%H%M%S.pcap -G 15 &
+        tcpdump -i \$$BRIDGE_DEV 'not host 168.63.129.16 and not host 127.0.0.1 and not host 172.20.0.50 and not host 172.20.0.201 and not port 22 and not port 29092 and not port 9092 and not port 9093 and not port 8000 and not port 3000 and not port 3306' -w /pcaps/traffic_br_%Y%m%d_%H%M%S.pcap -G 15 &
       fi;
-      tcpdump -i eth0 'not host 168.63.129.16 and not host 127.0.0.1 and not port 22 and not port 29092 and not port 9092 and not port 9093 and not port 8000 and not port 3000 and not port 3306' -w /pcaps/traffic_eth0_%Y%m%d_%H%M%S.pcap -G 15
+      tcpdump -i eth0 'not host 168.63.129.16 and not host 127.0.0.1 and not host 172.20.0.50 and not host 172.20.0.201 and not port 22 and not port 29092 and not port 9092 and not port 9093 and not port 8000 and not port 3000 and not port 3306' -w /pcaps/traffic_eth0_%Y%m%d_%H%M%S.pcap -G 15
       "
 
   client1:
@@ -129,6 +129,9 @@ services:
       - ./flows:/flows
       - ./process_pcaps.sh:/app/process_pcaps.sh:ro
       - ./flows_iot:/flows_iot
+      # Isolated IoT test lane (does not feed the live kafka-producer)
+      - ./pcaps_iot_test:/pcaps_iot_test:ro
+      - ./flows_iot_test:/flows_iot_test
     working_dir: /app
     entrypoint: ["/bin/sh"]
     command:
@@ -183,13 +186,16 @@ services:
       KAFKA_BROKER: kafka:29092
       KAFKA_TOPIC: flows
       KAFKA_IOT_TOPIC: flows_iot
+      KAFKA_TEST_TOPIC: flows_iot_test
       FLOWS_DIR: /flows
       FLOWS_IOT_DIR: /flows_iot
+      FLOWS_TEST_DIR: /flows_iot_test
       BATCH_SIZE: 5
       SCAN_INTERVAL: 2
     volumes:
       - ./flows:/flows:ro
       - ./flows_iot:/flows_iot:ro
+      - ./flows_iot_test:/flows_iot_test:ro
     depends_on:
       kafka:
         condition: service_healthy
@@ -246,6 +252,34 @@ services:
       - nexa-net
     restart: unless-stopped
 
+  # ── IoT ML Consumer (Test Lane) ───────────────────────────────────────────
+  # Runs the TON-IoT model on the ISOLATED simulation test lane (flows_iot_test).
+  # Keeps the Simulation Lab's home-network scenarios off the real device lane.
+  ml-consumer-iot-test:
+    build: ./ml_consumer
+    container_name: ml-consumer-iot-test
+    environment:
+      - KAFKA_BROKER=kafka:29092
+      - KAFKA_TOPIC=flows_iot_test
+      - CONFIDENCE_THRESHOLD=0.80
+      - BACKEND_URL=${NEXA_BACKEND_URL:-http://host.docker.internal:8000}
+      # iot_test keeps simulation results out of the real home_network dashboard
+      # while still using the IoT model (consumer picks it whenever != website).
+      - SOURCE_TYPE=iot_test
+      - REGISTERED_ID=1
+      - HEALTH_INTERVAL=60
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./ml_consumer/model:/app/model:ro
+      - ./ml_consumer/consumer.py:/app/consumer.py:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - nexa-net
+    restart: unless-stopped
+
   kali-attacker:
     build: ./kali_attacker
     container_name: kali-attacker
@@ -257,6 +291,38 @@ services:
     volumes:
       - ./kali_attacks:/attacks
     command: tail -f /dev/null
+
+  # ── IoT Attacker ──────────────────────────────────────────────────────────
+  # Dedicated attacker box for home-network scenarios (runs iot_attacks/*.sh via
+  # docker exec). Kept separate from kali-attacker, which is web-only.
+  iot-attacker:
+    build: ./iot_attacker
+    container_name: iot-attacker
+    networks:
+      nexa-net:
+        ipv4_address: 172.20.0.201
+    depends_on:
+      - iot-victim
+    volumes:
+      - ./iot_attacks:/iot_attacks
+    command: tail -f /dev/null
+    restart: unless-stopped
+
+  # ── IoT Victim Device ─────────────────────────────────────────────────────
+  # Simulated IoT device target. Self-captures its own traffic into the ISOLATED
+  # ./pcaps_iot_test folder (processed by cicflow, never feeds the live pipeline).
+  iot-victim:
+    build: ./iot_victim
+    container_name: iot-victim
+    networks:
+      nexa-net:
+        ipv4_address: 172.20.0.50
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./pcaps_iot_test:/pcaps_iot_test
+    restart: unless-stopped
 
   nexa-frontend:
     build: ./nexa_frontend

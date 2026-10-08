@@ -33,6 +33,10 @@ flows_iot/*.csv
 flows/*.csv.tmp
 pcaps/*.pcap
 pcaps_iot/*.pcap
+# Isolated IoT test lane
+flows_iot_test/*.csv
+flows_iot_test/*.csv.tmp
+pcaps_iot_test/*.pcap
 kali_attacks/session.txt
 cicflowmeter/
 

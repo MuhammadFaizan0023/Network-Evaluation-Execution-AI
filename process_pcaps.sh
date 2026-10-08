@@ -4,6 +4,10 @@ PCAP_DIR="/pcaps"
 IOT_PCAP_DIR="/pcaps_iot"
 FLOW_DIR="/flows"
 IOT_FLOW_DIR="/flows_iot"
+# Isolated IoT test lane (iot-victim self-capture); processed like IoT but kept
+# separate so it never reaches the live kafka-producer / dashboards.
+TEST_PCAP_DIR="/pcaps_iot_test"
+TEST_FLOW_DIR="/flows_iot_test"
 
 SCAN_INTERVAL=15          # seconds between scans
 FLOW_TIMEOUT=300          # max seconds allowed per PCAP (5 min)
@@ -15,6 +19,7 @@ process_directory() {
   dir="$1"
   label="$2"
   output_dir="$3"
+  settle="${4:-$IOT_SETTLE_SECONDS}"   # seconds a capture must be idle before processing
 
   if [ ! -d "$dir" ]; then
     echo "Directory $dir not found — skipping $label"
@@ -37,7 +42,7 @@ process_directory() {
 
       file_mtime=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo "0")
       current_time=$(date +%s)
-      if [ "$file_mtime" -gt 0 ] && [ $((current_time - file_mtime)) -lt "$IOT_SETTLE_SECONDS" ]; then
+      if [ "$file_mtime" -gt 0 ] && [ $((current_time - file_mtime)) -lt "$settle" ]; then
         echo "Waiting for IoT capture to stop growing: $f"
         continue
       fi
@@ -151,6 +156,9 @@ trap 'kill "$WEBSITE_PROCESSOR_PID" 2>/dev/null; wait "$WEBSITE_PROCESSOR_PID" 2
 
 while true; do
   process_directory "$IOT_PCAP_DIR" "iot" "$IOT_FLOW_DIR"
+  # Isolated test lane: same IoT processing logic, separate in/out folders,
+  # shorter settle so simulation results surface quickly.
+  process_directory "$TEST_PCAP_DIR" "iot" "$TEST_FLOW_DIR" 6
 
   echo "Waiting $SCAN_INTERVAL seconds before next scan..."
   sleep "$SCAN_INTERVAL"

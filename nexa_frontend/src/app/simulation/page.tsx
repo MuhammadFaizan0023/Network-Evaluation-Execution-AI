@@ -116,6 +116,40 @@ export default function SimulationPage() {
   const durationRef = useRef(duration);
   durationRef.current = duration;
 
+  // Always-current refs so buildSummary reads the latest values without stale closures.
+  const scenarioRef = useRef(scenario);
+  scenarioRef.current = scenario;
+  const elapsedRef = useRef(elapsed);
+  elapsedRef.current = elapsed;
+  const statsRef = useRef(stats);
+  statsRef.current = stats;
+  const liveFlowsRef = useRef(liveFlows);
+  liveFlowsRef.current = liveFlows;
+
+  // Build the detection summary from the flows collected during the run
+  const buildSummary = useCallback(() => {
+    const sc = scenarioRef.current;
+    const mapInfo = scenarioMapping[sc] || { label: sc, expected: "—" };
+    const flows = liveFlowsRef.current;
+    const latestThreat = flows.find((f) => f.prediction.toLowerCase() !== "benign");
+    const detectedVal = latestThreat ? latestThreat.prediction : "Benign";
+    const expectedClean = mapInfo.expected.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const detectedClean = detectedVal.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const isCorrect = detectedClean.includes(expectedClean) ||
+                      (detectedVal === "Benign" && mapInfo.expected === "—");
+    const el = elapsedRef.current;
+    const st = statsRef.current;
+    setLastRunSummary({
+      scenario: mapInfo.label,
+      expected: mapInfo.expected,
+      detected: detectedVal,
+      result: isCorrect ? "✓ Correct Detection" : "✗ Missed / Incorrect",
+      latency: latestThreat ? `${(el > 1 ? (el - 1) : 1.2).toFixed(1)} sec` : "N/A",
+      flows: st.flows,
+      alerts: st.alerts,
+    });
+  }, []);
+
   // Keep the selected scenario valid for the current source type (web vs IoT)
   useEffect(() => {
     if (!scenarioOptions.some((s) => s.value === scenario)) {
@@ -125,6 +159,8 @@ export default function SimulationPage() {
 
   // Clear previous results/logs when switching source tab (web <-> home network)
   useEffect(() => {
+    // Default target per source: IoT victim device vs DVWA web target
+    setTarget(sourceType === "home_network" ? "172.20.0.50" : "172.20.0.10");
     setLastRunSummary(null);
     setLiveFlows([]);
     setEvents([]);
@@ -178,11 +214,13 @@ export default function SimulationPage() {
     setTrafficVolumeData(null);
     setElapsed(0);
     addEvent(`Initializing scenario: ${scenario.toUpperCase()} targeting ${target}...`, "system");
+    // Lane this run belongs to: web scenarios -> website (CNN); home-network -> iot_test (TON-IoT)
+    const simSourceType = sourceType === "home_network" ? "iot_test" : "website";
     try {
       const res = await fetch(`${API_BASE_URL}/simulation/start/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attack_type: scenario, target: target, intensity: intensity, duration: duration }),
+        body: JSON.stringify({ attack_type: scenario, target: target, intensity: intensity, duration: duration, source_type: simSourceType }),
       });
       if (res.ok) {
         lastActionTimeRef.current = Date.now();
@@ -199,7 +237,7 @@ export default function SimulationPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [scenario, target, intensity, duration, addEvent, fetchTrafficVolume]);
+  }, [scenario, target, intensity, duration, sourceType, addEvent, fetchTrafficVolume]);
 
   const handleStopAttack = useCallback(async () => {
     setActionLoading(true);
@@ -213,26 +251,8 @@ export default function SimulationPage() {
         setIsRunning(false);
         addEvent("Simulation stopped. Safe status restored.", "system");
         fetchTrafficVolume();
-
-        // Capture summary report
-        const mapInfo = scenarioMapping[scenario] || { label: scenario, expected: "—" };
-        const latestThreat = liveFlows.find((f) => f.prediction.toLowerCase() !== "benign");
-        const detectedVal = latestThreat ? latestThreat.prediction : "Benign";
-
-        const expectedClean = mapInfo.expected.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const detectedClean = detectedVal.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const isCorrect = detectedClean.includes(expectedClean) || 
-                          (detectedVal === "Benign" && mapInfo.expected === "—");
-
-        setLastRunSummary({
-          scenario: mapInfo.label,
-          expected: mapInfo.expected,
-          detected: detectedVal,
-          result: isCorrect ? "✓ Correct Detection" : "✗ Missed / Incorrect",
-          latency: latestThreat ? `${(elapsed > 1 ? (elapsed - 1) : 1.2).toFixed(1)} sec` : "N/A",
-          flows: stats.flows,
-          alerts: stats.alerts,
-        });
+        // Hard stop: freeze the summary from the flows collected during the run.
+        buildSummary();
       } else {
         alert("Failed to stop simulation.");
       }
@@ -241,7 +261,7 @@ export default function SimulationPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [addEvent, scenario, liveFlows, elapsed, stats, fetchTrafficVolume]);
+  }, [addEvent, buildSummary, fetchTrafficVolume]);
 
   // Check backend status on mount
   useEffect(() => {
@@ -339,7 +359,9 @@ export default function SimulationPage() {
                 } else {
                   addEvent(`Benign network flow analyzed`, "info");
                 }
-                return [data.latest_flow, ...prev].slice(0, 30);
+                const next = [data.latest_flow, ...prev].slice(0, 30);
+                liveFlowsRef.current = next;
+                return next;
               });
             }
           }

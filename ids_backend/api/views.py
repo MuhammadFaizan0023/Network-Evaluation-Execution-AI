@@ -156,6 +156,7 @@ class FlowIngestView(APIView):
         print(f"DEBUG: Ingesting flows at {now}")
         saved = 0
         alert_count = 0
+        created_flows = []
 
         from .models import WhitelistedIP, BlockedIP
         whitelisted_ips = set(WhitelistedIP.objects.values_list('ip', flat=True))
@@ -193,6 +194,10 @@ class FlowIngestView(APIView):
                 if not matched_device_id:
                     continue
                 item['registered_id'] = matched_device_id
+            elif item.get('source_type') == 'iot_test':
+                # Simulation test lane: accept unconditionally (no registered
+                # device required) and keep it out of the real home_network views.
+                item['registered_id'] = device_ip_map.get(src_ip) or device_ip_map.get(dst_ip) or None
             else:
                 matched_site_id = site_ip_map.get(dst_ip) or site_ip_map.get(src_ip)
                 if matched_site_id:
@@ -210,6 +215,7 @@ class FlowIngestView(APIView):
                 item['severity'] = 'NORMAL'
 
             flow = FlowRecord.objects.create(**item)
+            created_flows.append(flow)
             saved += 1
             if flow.is_alert:
                 Incident.objects.create(
@@ -227,11 +233,13 @@ class FlowIngestView(APIView):
                     pass
 
 
-        total_flows = FlowRecord.objects.count()
-        total_alerts = FlowRecord.objects.filter(is_alert=True).count()
-        active_alerts = Incident.objects.filter(status='open').count()
-        resolved_alerts = Incident.objects.filter(status='resolved').count()
-        benign_flows = FlowRecord.objects.filter(is_alert=False).count()
+        # Exclude the simulation test lane (iot_test) from global dashboard numbers.
+        real_flows = FlowRecord.objects.exclude(source_type='iot_test')
+        total_flows = real_flows.count()
+        total_alerts = real_flows.filter(is_alert=True).count()
+        active_alerts = Incident.objects.filter(status='open').exclude(flow__source_type='iot_test').count()
+        resolved_alerts = Incident.objects.filter(status='resolved').exclude(flow__source_type='iot_test').count()
+        benign_flows = real_flows.filter(is_alert=False).count()
         threat_rate = (total_alerts / total_flows * 100) if total_flows else 0.0
         payload = {
             'type': 'dashboard_update',
@@ -242,41 +250,41 @@ class FlowIngestView(APIView):
             'benign_flows': benign_flows,
             'detection_rate': round(threat_rate, 2),
             'latest_alerts': list(
-                FlowRecord.objects.filter(is_alert=True).order_by('-timestamp')[:10].values(
+                real_flows.filter(is_alert=True).order_by('-timestamp')[:10].values(
                     'timestamp', 'prediction', 'severity', 'src_ip', 'dst_ip', 'confidence'
                 )
             ),
         }
         _send_group('dashboard', 'dashboard_broadcast', payload)
 
-        # Update active simulation session stats if one is running
+        # Update the running simulation session (hard stop: no post-stop grace).
+        # Scope to the session's lane so e.g. website client traffic never leaks
+        # into a home-network (iot_test) run and vice-versa.
         session = SimulationSession.objects.filter(status='running').first()
         if session:
-            session.flows_generated += saved
-            session.alerts_triggered += alert_count
-            session.save(update_fields=['flows_generated', 'alerts_triggered'])
+            matched = [f for f in created_flows if f.source_type == session.source_type]
+            if matched:
+                session.flows_generated += len(matched)
+                session.alerts_triggered += sum(1 for f in matched if f.is_alert)
+                session.save(update_fields=['flows_generated', 'alerts_triggered'])
 
-            # Send immediate live update to simulation websocket group
-            latest_flow = None
-            if saved > 0:
-                # Get the last flow in this batch
+                last = matched[-1]
                 latest_flow = {
-                    'id': flow.id,
-                    'src_ip': flow.src_ip,
-                    'dst_ip': flow.dst_ip,
-                    'prediction': flow.prediction,
-                    'confidence': flow.confidence,
-                    'severity': flow.severity,
-                    'timestamp': flow.timestamp.isoformat()
+                    'id': last.id,
+                    'src_ip': last.src_ip,
+                    'dst_ip': last.dst_ip,
+                    'prediction': last.prediction,
+                    'confidence': last.confidence,
+                    'severity': last.severity,
+                    'timestamp': last.timestamp.isoformat()
                 }
-
-            _send_group('simulation', 'simulation_broadcast', {
-                'type': 'simulation_update',
-                'is_running': True,
-                'latest_flow': latest_flow,
-                'flows_generated': session.flows_generated,
-                'alerts_triggered': session.alerts_triggered,
-            })
+                _send_group('simulation', 'simulation_broadcast', {
+                    'type': 'simulation_update',
+                    'is_running': session.status == 'running',
+                    'latest_flow': latest_flow,
+                    'flows_generated': session.flows_generated,
+                    'alerts_triggered': session.alerts_triggered,
+                })
 
         return Response({'status': 'ok', 'saved': saved})
 
@@ -801,9 +809,25 @@ class SimulationStartView(APIView):
     def post(self, request):
         attack_type = request.data.get('attack_type')
         target = request.data.get('target')
-        session = SimulationSession.objects.create(attack_type=attack_type, status='running')
-        threading.Thread(target=start_attack_process, args=(attack_type, target), daemon=True).start()
-        return Response({'status': 'started', 'session_id': session.id, 'attack_type': attack_type, 'target': target})
+        intensity = request.data.get('intensity')
+        duration = request.data.get('duration')
+        source_type = request.data.get('source_type') or 'website'
+        session = SimulationSession.objects.create(
+            attack_type=attack_type, status='running', source_type=source_type
+        )
+        threading.Thread(
+            target=start_attack_process,
+            args=(attack_type, target, intensity, duration),
+            daemon=True,
+        ).start()
+        return Response({
+            'status': 'started',
+            'session_id': session.id,
+            'attack_type': attack_type,
+            'target': target,
+            'intensity': intensity,
+            'duration': duration,
+        })
 
 
 class SimulationStatusView(APIView):
@@ -841,7 +865,7 @@ class SimulationLiveFeedView(APIView):
         session = SimulationSession.objects.filter(status='running').first()
         qs = FlowRecord.objects.order_by('-timestamp')
         if session:
-            qs = qs.filter(timestamp__gte=session.started_at)
+            qs = qs.filter(timestamp__gte=session.started_at, source_type=session.source_type)
         flows = list(qs[:20].values('timestamp', 'src_ip', 'dst_ip', 'prediction', 'confidence', 'severity'))
         return Response({'flows': flows})
 
