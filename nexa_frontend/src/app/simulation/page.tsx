@@ -11,6 +11,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api";
+import { useSource } from "@/components/providers/SourceContext";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,9 +53,36 @@ const scenarioMapping: Record<string, { label: string; expected: string }> = {
   sqli: { label: "SQL Injection", expected: "SQL-Injection" },
   dos: { label: "Denial of Service", expected: "DoS" },
   xss: { label: "Cross-Site Scripting", expected: "XSS" },
+  // Home-network / IoT scenarios (expected = TON-IoT class)
+  iotrecon: { label: "Reconnaissance & Access Attack", expected: "Scanning" },
+  iotbenign: { label: "Benign", expected: "—" },
+  iotbackdoor: { label: "Backdoor", expected: "Backdoor" },
+  iotransomware: { label: "Ransomware", expected: "Ransomware" },
+  iotmitm: { label: "MITM", expected: "MITM" },
+  iotdos: { label: "DoS", expected: "DoS" },
 };
 
+// Scenario dropdown options per source type
+const WEB_SCENARIOS = [
+  { value: "portscan", label: "Port Scan (Nmap)" },
+  { value: "sqli", label: "SQL Injection" },
+  { value: "bruteforce", label: "Web Brute Force" },
+  { value: "dos", label: "Denial of Service (DoS)" },
+  { value: "xss", label: "Cross-Site Scripting (XSS)" },
+];
+const IOT_SCENARIOS = [
+  { value: "iotrecon", label: "Reconnaissance & Access Attack" },
+  { value: "iotbenign", label: "Benign" },
+  { value: "iotbackdoor", label: "Backdoor" },
+  { value: "iotransomware", label: "Ransomware" },
+  { value: "iotmitm", label: "MITM" },
+  { value: "iotdos", label: "DoS" },
+];
+
 export default function SimulationPage() {
+  const { sourceType } = useSource();
+  const scenarioOptions = sourceType === "home_network" ? IOT_SCENARIOS : WEB_SCENARIOS;
+
   const [isRunning, setIsRunning] = useState(false);
   const [scenario, setScenario] = useState("bruteforce");
   const [target, setTarget] = useState("172.20.0.10");
@@ -87,6 +115,23 @@ export default function SimulationPage() {
   // Ref to track duration for stop trigger
   const durationRef = useRef(duration);
   durationRef.current = duration;
+
+  // Keep the selected scenario valid for the current source type (web vs IoT)
+  useEffect(() => {
+    if (!scenarioOptions.some((s) => s.value === scenario)) {
+      setScenario(scenarioOptions[0].value);
+    }
+  }, [scenarioOptions, scenario]);
+
+  // Clear previous results/logs when switching source tab (web <-> home network)
+  useEffect(() => {
+    setLastRunSummary(null);
+    setLiveFlows([]);
+    setEvents([]);
+    setStats({ flows: 0, alerts: 0 });
+    setTrafficVolumeData(null);
+    setElapsed(0);
+  }, [sourceType]);
 
   // Append clean timeline events
   const addEvent = useCallback((message: string, type: "info" | "threat" | "system" = "info") => {
@@ -125,22 +170,23 @@ export default function SimulationPage() {
 
   const handleStartAttack = useCallback(async () => {
     setActionLoading(true);
-    addEvent(`Initializing scenario: ${scenario.toUpperCase()} targeting ${target}...`, "system");
+    // Clear any previous run's results/logs before starting a new simulation
     setLastRunSummary(null);
+    setLiveFlows([]);
+    setEvents([]);
+    setStats({ flows: 0, alerts: 0 });
+    setTrafficVolumeData(null);
+    setElapsed(0);
+    addEvent(`Initializing scenario: ${scenario.toUpperCase()} targeting ${target}...`, "system");
     try {
       const res = await fetch(`${API_BASE_URL}/simulation/start/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attack_type: scenario, target: target }),
+        body: JSON.stringify({ attack_type: scenario, target: target, intensity: intensity, duration: duration }),
       });
       if (res.ok) {
         lastActionTimeRef.current = Date.now();
         setIsRunning(true);
-        setElapsed(0);
-        setStats({ flows: 0, alerts: 0 });
-        setLiveFlows([]);
-        setEvents([]);
-        setTrafficVolumeData(null);
         fetchTrafficVolume();
         addEvent("Simulation pipeline started successfully", "system");
       } else {
@@ -153,7 +199,7 @@ export default function SimulationPage() {
     } finally {
       setActionLoading(false);
     }
-  }, [scenario, target, addEvent, fetchTrafficVolume]);
+  }, [scenario, target, intensity, duration, addEvent, fetchTrafficVolume]);
 
   const handleStopAttack = useCallback(async () => {
     setActionLoading(true);
@@ -385,11 +431,11 @@ export default function SimulationPage() {
                 <SelectValue placeholder="Select Scenario" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="portscan">Port Scan (Nmap)</SelectItem>
-                <SelectItem value="sqli">SQL Injection</SelectItem>
-                <SelectItem value="bruteforce">Web Brute Force</SelectItem>
-                <SelectItem value="dos">Denial of Service (DoS)</SelectItem>
-                <SelectItem value="xss">Cross-Site Scripting (XSS)</SelectItem>
+                {scenarioOptions.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
