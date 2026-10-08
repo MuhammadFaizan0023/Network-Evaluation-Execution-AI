@@ -7,11 +7,13 @@ INTENSITY="${INTENSITY:-medium}"
 DURATION="${DURATION:-60}"
 END=$(($(date +%s) + DURATION))
 
-# Intensity -> concurrent connections / flood packets / pause between bursts
+# Intensity -> concurrent connections / flood packets / pause between bursts.
+# Kept modest on purpose: the signature must be clear but still yield only a few
+# hundred flows so CICFlowMeter processes each capture in ~1-2s (not minutes).
 case "$INTENSITY" in
-    low)    CONN=200;  FLOOD=500;   SLEEP_MAX=6 ;;
-    high)   CONN=1500; FLOOD=5000;  SLEEP_MAX=2 ;;
-    *)      CONN=800;  FLOOD=2000;  SLEEP_MAX=4 ;;  # medium
+    low)    CONN=40;  FLOOD=100;  SLEEP_MAX=6 ;;
+    high)   CONN=150; FLOOD=400;  SLEEP_MAX=2 ;;
+    *)      CONN=80;  FLOOD=200;  SLEEP_MAX=4 ;;  # medium
 esac
 
 while [ $(date +%s) -lt $END ]; do

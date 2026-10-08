@@ -7,11 +7,13 @@ INTENSITY="${INTENSITY:-medium}"
 DURATION="${DURATION:-60}"
 END=$(($(date +%s) + DURATION))
 
-# Intensity -> nmap timing template, port breadth, access attempts, pause
+# Intensity -> nmap timing template, port breadth, access attempts, pause.
+# Port breadth is capped (never 1-65535) so a scan yields a few hundred flows,
+# keeping CICFlowMeter fast enough for live predictions.
 case "$INTENSITY" in
-    low)    TIMING=2; PORTS="1-1024";  THREADS=2; SLEEP_MAX=6 ;;
-    high)   TIMING=4; PORTS="1-65535"; THREADS=8; SLEEP_MAX=2 ;;
-    *)      TIMING=3; PORTS="1-10000"; THREADS=4; SLEEP_MAX=4 ;;  # medium
+    low)    TIMING=2; PORTS="1-1024"; THREADS=2; SLEEP_MAX=6 ;;
+    high)   TIMING=4; PORTS="1-2048"; THREADS=8; SLEEP_MAX=2 ;;
+    *)      TIMING=3; PORTS="1-1024"; THREADS=4; SLEEP_MAX=4 ;;  # medium
 esac
 
 # Small credential lists for the light access-attempt phase

@@ -9,7 +9,7 @@ IOT_FLOW_DIR="/flows_iot"
 TEST_PCAP_DIR="/pcaps_iot_test"
 TEST_FLOW_DIR="/flows_iot_test"
 
-SCAN_INTERVAL=15          # seconds between scans
+SCAN_INTERVAL=5           # seconds between scans (fast pickup for live sim results)
 FLOW_TIMEOUT=300          # max seconds allowed per PCAP (5 min)
 MIN_PCAP_SIZE=100         # minimum file size in bytes to attempt processing
 IOT_SETTLE_SECONDS=20

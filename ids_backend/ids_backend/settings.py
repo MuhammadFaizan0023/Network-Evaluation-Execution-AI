@@ -21,6 +21,9 @@ ALLOWED_HOSTS = env_hosts.split(',') if env_hosts else ['host.docker.internal', 
 # Application definition
 
 INSTALLED_APPS = [
+    # 'daphne' must precede staticfiles so `runserver` serves the ASGI/Channels
+    # stack (WebSockets at /ws/...); without it runserver is WSGI-only and ws 404s.
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

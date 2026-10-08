@@ -53,13 +53,13 @@ const scenarioMapping: Record<string, { label: string; expected: string }> = {
   sqli: { label: "SQL Injection", expected: "SQL-Injection" },
   dos: { label: "Denial of Service", expected: "DoS" },
   xss: { label: "Cross-Site Scripting", expected: "XSS" },
-  // Home-network / IoT scenarios (expected = TON-IoT class)
-  iotrecon: { label: "Reconnaissance & Access Attack", expected: "Scanning" },
-  iotbenign: { label: "Benign", expected: "—" },
+  // Home-network / IoT scenarios. expected == label == the TON-IoT model's class
+  // name, so Scenario and Expected read the same and a correct Detected matches.
+  iotrecon: { label: "Reconnaissance & Access Attack", expected: "Reconnaissance & Access Attack" },
+  iotbenign: { label: "Benign", expected: "Benign" },
   iotbackdoor: { label: "Backdoor", expected: "Backdoor" },
   iotransomware: { label: "Ransomware", expected: "Ransomware" },
   iotmitm: { label: "MITM", expected: "MITM" },
-  iotdos: { label: "DoS", expected: "DoS" },
 };
 
 // Scenario dropdown options per source type
@@ -76,7 +76,8 @@ const IOT_SCENARIOS = [
   { value: "iotbackdoor", label: "Backdoor" },
   { value: "iotransomware", label: "Ransomware" },
   { value: "iotmitm", label: "MITM" },
-  { value: "iotdos", label: "DoS" },
+  // DoS is a website-model class only (TON-IoT model has no DoS class), so it
+  // lives in the website tab, not here.
 ];
 
 export default function SimulationPage() {
@@ -86,7 +87,7 @@ export default function SimulationPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [scenario, setScenario] = useState("bruteforce");
   const [target, setTarget] = useState("172.20.0.10");
-  const [duration, setDuration] = useState("30"); // in seconds
+  const [duration, setDuration] = useState("60"); // in seconds (outlast pipeline latency so live results appear)
   const [intensity, setIntensity] = useState("medium");
 
   const [loading, setLoading] = useState(true);
