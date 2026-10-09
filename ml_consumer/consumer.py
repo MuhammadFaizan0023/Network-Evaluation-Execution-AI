@@ -61,16 +61,20 @@ RECOMMENDED_ACTIONS_IOT = {
 }
 
 # ── IOT LABEL MAPPING ─────────────────────────────────────────────────────────
-# Verified from nexa-xgbclassifier.ipynb notebook
-# attack_encoded values confirmed from value_counts()
-
-IOT_LABEL_MAPPING = {
+# Human-readable names for the ORIGINAL class codes the model was trained on.
+# nexa_label_encoder.pkl.classes_ holds those codes (e.g. [0,1,2,4,5]) in
+# model-index order, so the model index -> code -> name chain is:
+#   model.predict() -> i  ->  encoder.classes_[i] (code)  ->  IOT_CODE_NAMES[code]
+IOT_CODE_NAMES = {
     0: "Benign",
     1: "Reconnaissance & Access Attack",
     2: "backdoor",
-    3: "mitm",
-    4: "ransomware"
+    4: "mitm",
+    5: "ransomware",
 }
+# Index -> name map actually used by predict_iot; built from the encoder at model
+# load time (see the IoT branch below). Empty until then.
+IOT_LABEL_MAPPING = {}
 
 # ── RAW COLUMNS (CICFlowMeter output) ─────────────────────────────────────────
 
@@ -257,9 +261,29 @@ else:
     print("Loading IoT scaler...")
     iot_scaler = joblib.load("/app/model/nexa_scalar.pkl")
 
-    # Note: label encoder not used — using verified manual mapping instead
+    # Build the index -> name map from the label encoder (authoritative source of
+    # the model-index -> original-code relationship), combined with IOT_CODE_NAMES.
+    # Falls back to positional names (but logs loudly) if the artifacts disagree,
+    # so a swapped/retrained model can never silently mislabel.
+    try:
+        iot_encoder = joblib.load("/app/model/nexa_label_encoder.pkl")
+        codes = list(iot_encoder.classes_)
+        unmapped = [c for c in codes if int(c) not in IOT_CODE_NAMES]
+        model_n = len(getattr(iot_model, "classes_", codes))
+        if unmapped or len(codes) != model_n:
+            print(f"WARNING: encoder/model/name-table mismatch "
+                  f"(encoder codes={codes}, model n_classes={model_n}, "
+                  f"unmapped={unmapped}); falling back to positional names")
+            IOT_LABEL_MAPPING = {i: n for i, n in enumerate(IOT_CODE_NAMES.values())}
+        else:
+            IOT_LABEL_MAPPING = {i: IOT_CODE_NAMES[int(c)] for i, c in enumerate(codes)}
+    except Exception as e:
+        print(f"WARNING: could not load label encoder ({e}); "
+              f"using positional names from IOT_CODE_NAMES")
+        IOT_LABEL_MAPPING = {i: n for i, n in enumerate(IOT_CODE_NAMES.values())}
+
     print("IoT model loaded!")
-    print(f"IoT classes: {list(IOT_LABEL_MAPPING.values())}")
+    print(f"IoT label mapping (index -> name): {IOT_LABEL_MAPPING}")
 
 print(f"Backend URL: {BACKEND_URL}")
 print(f"Confidence threshold: {CONFIDENCE_THRESHOLD}")

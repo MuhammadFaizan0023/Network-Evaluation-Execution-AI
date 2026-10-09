@@ -188,7 +188,10 @@ class FlowIngestView(APIView):
             if src_ip and src_ip in blocked_ips:
                 continue
 
-            item['timestamp'] = now
+            # Keep the real capture time the consumer sent; only fall back to the
+            # ingest time if a flow arrived without a usable timestamp.
+            if not item.get('timestamp'):
+                item['timestamp'] = now
             if item.get('source_type') == 'home_network':
                 matched_device_id = device_ip_map.get(src_ip) or device_ip_map.get(dst_ip)
                 if not matched_device_id:
@@ -541,7 +544,12 @@ class AlertListView(generics.ListAPIView):
     pagination_class = LimitPagination
 
     def get_queryset(self):
-        qs = FlowRecord.objects.filter(is_alert=True).order_by('-timestamp')
+        # Alerts-only by default (dashboard card, existing callers). Opt into
+        # include_benign=true to list benign flows too (e.g. the Alerts page's
+        # "All traffic" view), so the model's benign classifications are visible.
+        include_benign = self.request.query_params.get('include_benign') == 'true'
+        base = FlowRecord.objects.all() if include_benign else FlowRecord.objects.filter(is_alert=True)
+        qs = base.order_by('-timestamp')
         severity = self.request.query_params.get('severity')
         prediction = self.request.query_params.get('prediction')
         qs = _filter_by_source_and_site(self.request, qs)

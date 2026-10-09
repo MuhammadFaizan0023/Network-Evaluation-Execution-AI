@@ -79,7 +79,12 @@ export default function AlertsPage() {
 }
 
 function AlertsPageInner() {
-  const { alerts, loading, page, setPage, pageSize, setPageSize } = useDashboardData();
+  // "all" shows every classified flow (benign + threats); "threats" keeps the
+  // original alerts-only feed. Default to all so benign traffic is visible.
+  const [trafficView, setTrafficView] = useState<"all" | "threats">("all");
+  const { alerts, loading, page, setPage, pageSize, setPageSize } = useDashboardData({
+    includeBenign: trafficView === "all",
+  });
   const searchParams = useSearchParams();
 
   // Seed filters from URL once on mount (deep links from other pages).
@@ -273,7 +278,7 @@ function AlertsPageInner() {
                 <span className="text-foreground font-medium tabular-nums">
                   {alerts.count.toLocaleString()}
                 </span>{" "}
-                total alerts ingested · showing page {page} ({filtered.length} after filters)
+                total {trafficView === "all" ? "flows" : "alerts"} ingested · showing page {page} ({filtered.length} after filters)
               </>
             ) : (
               "Loading alerts feed…"
@@ -347,6 +352,23 @@ function AlertsPageInner() {
             />
           </div>
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
+            <div className="w-[150px] shrink-0">
+              <Select
+                value={trafficView}
+                onValueChange={(v) => {
+                  setTrafficView(v as "all" | "threats");
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 rounded-full border-border bg-background text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All traffic</SelectItem>
+                  <SelectItem value="threats">Threats only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="w-[140px] shrink-0">
               <Select value={severityFilter} onValueChange={setSeverityFilter}>
                 <SelectTrigger className="h-9 rounded-full border-border bg-background text-xs">
@@ -439,7 +461,7 @@ function AlertsPageInner() {
               {filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center text-sm text-muted-foreground">
-                    No alerts match the current filters.
+                    No records match the current filters.
                   </TableCell>
                 </TableRow>
               ) : (

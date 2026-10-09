@@ -227,7 +227,8 @@ const MOCK_DATA = {
   },
 };
 
-export const useDashboardData = () => {
+export const useDashboardData = (options?: { includeBenign?: boolean }) => {
+  const includeBenign = options?.includeBenign ?? false;
   const { sourceType, activeSite } = useSource();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -274,7 +275,7 @@ export const useDashboardData = () => {
         fetch(`${API_BASE_URL}/dashboard/top-attackers/?source_type=${sourceType}&limit=5${siteParam}`).catch(() => null),
         fetch(`${API_BASE_URL}/dashboard/top-targets/?source_type=${sourceType}&limit=5${siteParam}`).catch(() => null),
         fetch(`${API_BASE_URL}/dashboard/pipeline-status/?source_type=${sourceType}`).catch(() => null),
-        fetch(`${API_BASE_URL}/alerts/?source_type=${sourceType}&page=${page}&limit=${pageSize}${siteParam}`).catch(() => null),
+        fetch(`${API_BASE_URL}/alerts/?source_type=${sourceType}&page=${page}&limit=${pageSize}${siteParam}${includeBenign ? "&include_benign=true" : ""}`).catch(() => null),
       ]);
 
       const allFailed = ![statsRes, attackTypesRes, severityRes, trafficVolumeRes, topAttackersRes, topTargetsRes, pipelineStatusRes, alertsRes].some((res) => res && res.ok);
@@ -297,7 +298,7 @@ export const useDashboardData = () => {
     } finally {
       setLoading(false);
     }
-  }, [sourceType, activeSite, page, pageSize, applyMockData]);
+  }, [sourceType, activeSite, page, pageSize, includeBenign, applyMockData]);
 
   useEffect(() => {
     fetchData();
