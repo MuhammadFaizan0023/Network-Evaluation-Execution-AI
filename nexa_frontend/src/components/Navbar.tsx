@@ -1,9 +1,9 @@
 "use client";
 
-import { Bell, LogOut, Moon, Plus, Settings, Sun, User } from "lucide-react";
-import Link from "next/link";
+import { LogOut, Moon, Plus, Settings, Sun, User } from "lucide-react";
 import { useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
+import NotificationBell from "./NotificationBell";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import {
   DropdownMenu,
@@ -129,13 +129,7 @@ const Navbar = () => {
           New scan
         </Button>
 
-        <Button variant="outline" size="icon" asChild className="h-10 w-10 rounded-full border-border bg-card hover:bg-accent relative">
-          <Link href="/alerts">
-            <Bell className="h-4 w-4" />
-            <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-destructive" />
-            <span className="sr-only">Notifications</span>
-          </Link>
-        </Button>
+        <NotificationBell />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
