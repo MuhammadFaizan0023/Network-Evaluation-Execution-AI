@@ -11,4 +11,7 @@ RUN pip install --no-cache-dir --timeout=300 -r requirements.txt
 
 COPY consumer.py .
 
+# Bake the ML model artifacts (web CNN + IoT XGBoost) into the single shared image.
+COPY model/ /app/model/
+
 CMD ["python", "-u", "consumer.py"]

@@ -144,6 +144,9 @@ services:
       - sniffer
     networks:
       - nexa-net
+    # Converter for the live IoT/camera lane (pcaps_iot -> flows_iot). Must come
+    # back after a Docker/host restart or camera flows silently stop being produced.
+    restart: unless-stopped
 
   kafka:
     image: confluentinc/cp-kafka:7.8.0
@@ -217,7 +220,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./ml_consumer/model:/app/model:ro
+      # Models are baked into the image (see ml_consumer/Dockerfile); only the
+      # shared consumer code stays bind-mounted so it remains live-editable.
       - ./ml_consumer/consumer.py:/app/consumer.py:ro
     depends_on:
       kafka:
@@ -243,7 +247,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./ml_consumer/model:/app/model:ro
+      # Models are baked into the image (see ml_consumer/Dockerfile); only the
+      # shared consumer code stays bind-mounted so it remains live-editable.
       - ./ml_consumer/consumer.py:/app/consumer.py:ro
     depends_on:
       kafka:
@@ -271,7 +276,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./ml_consumer/model:/app/model:ro
+      # Models are baked into the image (see ml_consumer/Dockerfile); only the
+      # shared consumer code stays bind-mounted so it remains live-editable.
       - ./ml_consumer/consumer.py:/app/consumer.py:ro
     depends_on:
       kafka:
