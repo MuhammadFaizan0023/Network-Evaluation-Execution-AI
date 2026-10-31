@@ -1,31 +1,41 @@
 #!/bin/sh
-# NEXA test-attack: TLS/SSL — repeated TLS handshakes + encrypted sessions against
-# the victim's TLS listener (:443), producing an SSL/TLS traffic signature on the
-# victim's wire (iot_test lane). Requires the iot-victim TLS listener (openssl
-# s_server on :443, added in iot_victim/entrypoint.sh).
+# tlsssl_attack.sh  ->  intended model class: "TLSSSL"
+#
+# TLS sessions where the CLIENT also uploads bulk (not just downloads), so the
+# forward direction carries a data burst (Fwd bulk nonzero) with large TLS-record
+# packets (dataset: Pkt Len ~275, ACK ~9, 5/6 pkts, Fwd Byts/b Avg ~100). The
+# victim's openssl s_server:443 completes real handshakes; we feed bulk stdin into
+# s_client and also POST a payload over https so forward bytes are substantial.
+
 echo "[TLSSSL] Starting..."
 TARGET="${TARGET_HOST:-172.20.0.50}"
 INTENSITY="${INTENSITY:-medium}"
 DURATION="${DURATION:-60}"
-TLS_PORT="${TLS_PORT:-443}"
+PORT="${TLS_PORT:-443}"
 END=$(($(date +%s) + DURATION))
 
-# Intensity -> requests per burst / pause between bursts.
+rnd() { awk "BEGIN{srand();print int(rand()*$1)+1}"; }
+
 case "$INTENSITY" in
-    low)    BURST=5;  SLEEP_MAX=5 ;;
-    high)   BURST=25; SLEEP_MAX=1 ;;
-    *)      BURST=12; SLEEP_MAX=3 ;;  # medium
+    low)    BURST=3;  SLEEP_MAX=4 ;;
+    high)   BURST=12; SLEEP_MAX=1 ;;
+    *)      BURST=6;  SLEEP_MAX=2 ;;  # medium
 esac
+
+# ~8 KB upload body -> forward TLS records (client-side bulk)
+head -c 8192 /dev/urandom > /tmp/tls_body.bin 2>/dev/null
 
 while [ "$(date +%s)" -lt "$END" ]; do
     i=0
     while [ "$i" -lt "$BURST" ]; do
-        # Full HTTPS request (handshake + encrypted GET); -k accepts self-signed cert
-        curl -sk -m 5 "https://$TARGET:$TLS_PORT/" >/dev/null 2>&1
+        # HTTPS POST: TLS handshake + forward application-data burst
+        curl -sk -o /dev/null -m 6 -X POST --data-binary @/tmp/tls_body.bin \
+            "https://$TARGET:$PORT/upload" 2>/dev/null
         i=$((i + 1))
     done
-    # A couple of raw TLS handshakes to vary the SSL/TLS signature
-    echo "Q" | openssl s_client -connect "$TARGET:$TLS_PORT" >/dev/null 2>&1
-    sleep $((RANDOM % SLEEP_MAX + 1))
+    # raw TLS session fed bulk stdin (client sends encrypted app-data forward)
+    cat /tmp/tls_body.bin | timeout 6 openssl s_client -quiet -connect "$TARGET:$PORT" >/dev/null 2>&1
+    sleep "$(rnd "$SLEEP_MAX")"
 done
+rm -f /tmp/tls_body.bin
 echo "[TLSSSL] Done."

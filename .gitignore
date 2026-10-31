@@ -38,6 +38,7 @@ flows_iot_test/*.csv
 flows_iot_test/*.csv.tmp
 pcaps_iot_test/*.pcap
 kali_attacks/session.txt
+attack_simulation/*.sh
 cicflowmeter/
 
 # Docker

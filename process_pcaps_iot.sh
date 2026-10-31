@@ -62,14 +62,15 @@ process_directory() {
 
     echo "=== Processing (iot): $f (${filesize} bytes) ==="
 
-    # CICFlowMeter only accepts classic pcap; convert pcapng if needed.
+    # CICFlowMeter only accepts classic pcap; dumpcap (camera) writes pcapng, so
+    # convert with tcpdump (reads pcapng via libpcap, writes classic pcap).
     input_file="$f"
     converted_file=""
     magic=$(od -An -tx1 -N4 "$f" 2>/dev/null | tr -d ' \n')
     if [ "$magic" = "0a0d0d0a" ]; then
       mkdir -p /tmp/pcap_convert
       converted_file="/tmp/pcap_convert/${base}.pcap"
-      if editcap -F pcap "$f" "$converted_file"; then
+      if tcpdump -r "$f" -w "$converted_file" 2>/dev/null; then
         input_file="$converted_file"
         echo "Converted pcapng to pcap: $f"
       else

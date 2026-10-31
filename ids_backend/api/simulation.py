@@ -1,5 +1,39 @@
+import os
+import sys
+import glob
 import subprocess
 import threading
+
+# ── IoT test-case injection (synthetic TRUSTLab-pattern flows) ────────────────
+# IoT scenarios no longer run the packet shell scripts (their captured features
+# suffer domain shift and read Benign). Instead they inject pre-validated
+# synthetic flows straight into the flows_iot_test lane via inject_testcase.py.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))          # repo root
+_TESTCASES = os.path.join(_REPO, "attack_simulation", "testcases")
+_INJECTOR = os.path.join(_TESTCASES, "inject_testcase.py")
+_BANK_DIR = os.path.join(_TESTCASES, "banks")
+_FLOWS_TEST_DIR = os.path.join(_REPO, "flows_iot_test")
+IOT_TESTCASE_SCENARIOS = {
+    "iotdos", "iotddos", "iotslowloris", "iotbruteforce", "iotmitm",
+    "iotevasion", "iotc2beac", "iotexfil", "iottlsssl", "benign",
+}
+# Per-BATCH flow count (the injector drips one batch every ~6 s for the run's
+# duration). Kept small so the lane/Kafka never backs up.
+INTENSITY_COUNT = {"low": 15, "medium": 25, "high": 40}
+
+
+def _purge_test_lane():
+    """Delete the previous run's injected test-case files so each simulation
+    starts clean (no stale flows lingering or getting replayed to the model)."""
+    try:
+        for f in glob.glob(os.path.join(_FLOWS_TEST_DIR, "testcase_*.csv")):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+    except Exception as e:
+        print(f"test-lane purge error: {e}")
 
 ATTACK_COMMANDS = {
     'portscan': ['docker', 'exec', 'kali-attacker', 'sh', '/attacks/portscan_attack.sh'],
@@ -65,6 +99,39 @@ def start_attack_process(attack_type, target=None, intensity=None, duration=None
     else:
         clean_key = raw
 
+    # IoT scenarios -> inject synthetic test-case flows (no packets, no domain
+    # shift). Web scenarios fall through to the docker-exec packet attacks below.
+    iot_scenario = None
+    if clean_key in IOT_TESTCASE_SCENARIOS:
+        iot_scenario = clean_key
+    elif raw.startswith('iot') and ('benign' in raw or 'normal' in raw):
+        iot_scenario = 'benign'
+
+    if iot_scenario is not None:
+        count = INTENSITY_COUNT.get(str(intensity or 'medium').lower(), 150)
+        try:
+            dur = int(duration) if duration else 60
+        except (TypeError, ValueError):
+            dur = 60
+        command = [sys.executable, _INJECTOR, iot_scenario, str(count), str(dur),
+                   _FLOWS_TEST_DIR, _BANK_DIR]
+        with process_lock:
+            # Supersede any still-running injector (so switching scenarios works
+            # without pressing Stop first), then wipe the previous run's files so
+            # only the newly pressed scenario is processed.
+            if current_process and current_process.poll() is None:
+                try:
+                    current_process.kill()
+                except Exception:
+                    pass
+            _purge_test_lane()
+            try:
+                current_process = subprocess.Popen(command)
+                print(f"Started IoT test-case injection: {command}")
+            except Exception as e:
+                print(f"Error launching test-case injector: {e}")
+            return current_process
+
     base_command = ATTACK_COMMANDS.get(clean_key)
     if not base_command:
         print(f"Unknown attack type: '{attack_type}' (normalized: '{clean_key}')")
@@ -123,13 +190,18 @@ def stop_attack_process():
         # not keep producing flows after Stop. Only the *_test folders are touched.
         purge_targets = [
             ('iot-victim', 'rm -f /pcaps_iot_test/*.pcap'),
-            ('cicflowmeter', 'rm -f /flows_iot_test/*.csv /flows_iot_test/*.csv.tmp'),
+            # flows_iot_test is mounted in cicflowmeter_iot (NOT cicflowmeter).
+            ('cicflowmeter_iot', 'rm -f /flows_iot_test/*.csv /flows_iot_test/*.csv.tmp'),
         ]
         for container, cmd in purge_targets:
             try:
                 subprocess.run(['docker', 'exec', container, 'sh', '-c', cmd], capture_output=True, timeout=5)
             except Exception as e:
                 print(f"Error purging test lane in {container}: {e}")
+
+        # Also purge host-side (backend runs on the host) so the injected
+        # test-case files are reliably removed even if the docker exec fails.
+        _purge_test_lane()
         return True
 
 
