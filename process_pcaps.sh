@@ -149,17 +149,8 @@ process_website_forever() {
   done
 }
 
-# Keep the website backlog from delaying IoT captures.
-process_website_forever &
-WEBSITE_PROCESSOR_PID=$!
-trap 'kill "$WEBSITE_PROCESSOR_PID" 2>/dev/null; wait "$WEBSITE_PROCESSOR_PID" 2>/dev/null' EXIT INT TERM
-
-while true; do
-  process_directory "$IOT_PCAP_DIR" "iot" "$IOT_FLOW_DIR"
-  # Isolated test lane: same IoT processing logic, separate in/out folders,
-  # shorter settle so simulation results surface quickly.
-  process_directory "$TEST_PCAP_DIR" "iot" "$TEST_FLOW_DIR" 6
-
-  echo "Waiting $SCAN_INTERVAL seconds before next scan..."
-  sleep "$SCAN_INTERVAL"
-done
+# Website lane ONLY. The IoT + test lanes (pcaps_iot / pcaps_iot_test) are handled
+# by the separate `cicflowmeter_iot` container (process_pcaps_iot.sh), which also
+# normalizes feature values to the new model's dataset. Running them here too
+# would make two containers write the same flows_iot* folders.
+process_website_forever

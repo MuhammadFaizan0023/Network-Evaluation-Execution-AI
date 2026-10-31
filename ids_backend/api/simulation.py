@@ -7,9 +7,20 @@ ATTACK_COMMANDS = {
     'bruteforce': ['docker', 'exec', 'kali-attacker', 'sh', '/attacks/bruteforce_web_attack.sh'],
     'dos': ['docker', 'exec', 'kali-attacker', 'sh', '/attacks/dos_attack.sh'],
     'xss': ['docker', 'exec', 'kali-attacker', 'sh', '/attacks/xss_attack.sh'],
-    # Home-network / IoT scenarios run in the dedicated iot-attacker container
-    'iotdos': ['docker', 'exec', 'iot-attacker', 'sh', '/iot_attacks/dos_iot.sh'],
-    'iotmitm': ['docker', 'exec', 'iot-attacker', 'sh', '/iot_attacks/mitm_iot.sh'],
+    # Home-network / IoT scenarios run in the dedicated iot-attacker container.
+    # New multiclass TON-IoT model test-attack suite (attack_simulation/), one
+    # script per model class, all targeting the isolated victim 172.20.0.50.
+    'iotdos': ['docker', 'exec', 'iot-attacker', 'sh', '/attack_simulation/dos_attack.sh'],
+    'iotddos': ['docker', 'exec', 'iot-attacker', 'sh', '/attack_simulation/ddos_attack.sh'],
+    'iotslowloris': ['docker', 'exec', 'iot-attacker', 'sh', '/attack_simulation/slowloris_attack.sh'],
+    'iotbruteforce': ['docker', 'exec', 'iot-attacker', 'sh', '/attack_simulation/bruteforce_attack.sh'],
+    'iotmitm': ['docker', 'exec', 'iot-attacker', 'sh', '/attack_simulation/mitm_attack.sh'],
+    'iotevasion': ['docker', 'exec', 'iot-attacker', 'sh', '/attack_simulation/evasion_attack.sh'],
+    'iotc2beac': ['docker', 'exec', 'iot-attacker', 'sh', '/attack_simulation/c2beac_attack.sh'],
+    'iotexfil': ['docker', 'exec', 'iot-attacker', 'sh', '/attack_simulation/exfiltration_attack.sh'],
+    'iottlsssl': ['docker', 'exec', 'iot-attacker', 'sh', '/attack_simulation/tlsssl_attack.sh'],
+    # Legacy (old-model) IoT scripts — kept for backward compatibility; not shown
+    # in the current Simulation Lab dropdown.
     'iotransomware': ['docker', 'exec', 'iot-attacker', 'sh', '/iot_attacks/ransomware_iot.sh'],
     'iotbackdoor': ['docker', 'exec', 'iot-attacker', 'sh', '/iot_attacks/backdoor_iot.sh'],
     'iotrecon': ['docker', 'exec', 'iot-attacker', 'sh', '/iot_attacks/recon_iot.sh'],
@@ -99,7 +110,7 @@ def stop_attack_process():
         # Kill any orphaned attack processes inside the attacker containers
         kill_targets = {
             'kali-attacker': ['attack.sh', 'nmap', 'hydra', 'hping3', 'sqlmap', 'slowhttptest'],
-            'iot-attacker': ['_iot.sh', 'nmap', 'hydra', 'hping3', 'slowhttptest', 'arpspoof', 'ettercap', 'nc'],
+            'iot-attacker': ['_iot.sh', '_attack.sh', 'nmap', 'hydra', 'hping3', 'slowhttptest', 'arpspoof', 'ettercap', 'nc', 'openssl', 'curl'],
         }
         for container, patterns in kill_targets.items():
             for pattern in patterns:

@@ -53,13 +53,18 @@ const scenarioMapping: Record<string, { label: string; expected: string }> = {
   sqli: { label: "SQL Injection", expected: "SQL-Injection" },
   dos: { label: "Denial of Service", expected: "DoS" },
   xss: { label: "Cross-Site Scripting", expected: "XSS" },
-  // Home-network / IoT scenarios. expected == label == the TON-IoT model's class
-  // name, so Scenario and Expected read the same and a correct Detected matches.
-  iotrecon: { label: "Reconnaissance & Access Attack", expected: "Reconnaissance & Access Attack" },
-  iotbenign: { label: "Benign", expected: "Benign" },
-  iotbackdoor: { label: "Backdoor", expected: "Backdoor" },
-  iotransomware: { label: "Ransomware", expected: "Ransomware" },
+  // Home-network / IoT scenarios for the new multiclass TON-IoT model. `expected`
+  // is the model's exact class string; the compare lower-cases + strips
+  // non-alphanumerics, so a correct Detected matches.
+  iotdos: { label: "Denial of Service", expected: "dos" },
+  iotddos: { label: "Distributed DoS", expected: "ddos" },
+  iotslowloris: { label: "Slowloris", expected: "slowloris" },
+  iotbruteforce: { label: "Brute Force", expected: "Bruteforce" },
   iotmitm: { label: "MITM", expected: "MITM" },
+  iotevasion: { label: "Evasion", expected: "Evasion" },
+  iotc2beac: { label: "C2 Beaconing", expected: "C2Beac" },
+  iotexfil: { label: "Data Exfiltration", expected: "Exfiltracion" },
+  iottlsssl: { label: "TLS/SSL", expected: "TLSSSL" },
 };
 
 // Scenario dropdown options per source type
@@ -71,31 +76,64 @@ const WEB_SCENARIOS = [
   { value: "xss", label: "Cross-Site Scripting (XSS)" },
 ];
 const IOT_SCENARIOS = [
-  { value: "iotrecon", label: "Reconnaissance & Access Attack" },
-  { value: "iotbenign", label: "Benign" },
-  { value: "iotbackdoor", label: "Backdoor" },
-  { value: "iotransomware", label: "Ransomware" },
-  { value: "iotmitm", label: "MITM" },
-  // DoS is a website-model class only (TON-IoT model has no DoS class), so it
-  // lives in the website tab, not here.
+  { value: "iotdos", label: "Denial of Service (DoS)" },
+  { value: "iotddos", label: "Distributed DoS (DDoS)" },
+  { value: "iotslowloris", label: "Slowloris" },
+  { value: "iotbruteforce", label: "Brute Force" },
+  { value: "iotmitm", label: "MITM (ARP Spoof)" },
+  { value: "iotevasion", label: "Evasion (Stealth Scan)" },
+  { value: "iotc2beac", label: "C2 Beaconing" },
+  { value: "iotexfil", label: "Data Exfiltration" },
+  { value: "iottlsssl", label: "TLS/SSL" },
 ];
+
+// ── View-state persistence ────────────────────────────────────────────────────
+// Next.js <Link> nav unmounts this page, so its useState is lost on every tab
+// switch. Persist the view (keyed by the source lane it belongs to) so returning
+// restores it; backend status still reconciles the running state on mount.
+const SIM_STATE_KEY = "nexa_sim_state";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function loadSimState(sourceType: string): any {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(SIM_STATE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    return s && s.sourceType === sourceType ? s : null;
+  } catch {
+    return null;
+  }
+}
+function clearSimState() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(SIM_STATE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function SimulationPage() {
   const { sourceType } = useSource();
   const scenarioOptions = sourceType === "home_network" ? IOT_SCENARIOS : WEB_SCENARIOS;
 
-  const [isRunning, setIsRunning] = useState(false);
-  const [scenario, setScenario] = useState("bruteforce");
-  const [target, setTarget] = useState("172.20.0.10");
-  const [duration, setDuration] = useState("60"); // in seconds (outlast pipeline latency so live results appear)
-  const [intensity, setIntensity] = useState("medium");
+  // Restore any persisted view for this source lane (once, at mount).
+  const [restored] = useState(() => loadSimState(sourceType));
+
+  const [isRunning, setIsRunning] = useState<boolean>(restored?.isRunning ?? false);
+  const [scenario, setScenario] = useState<string>(restored?.scenario ?? "bruteforce");
+  const [target, setTarget] = useState<string>(
+    restored?.target ?? (sourceType === "home_network" ? "172.20.0.50" : "172.20.0.10")
+  );
+  const [duration, setDuration] = useState<string>(restored?.duration ?? "60"); // seconds (outlast pipeline latency so live results appear)
+  const [intensity, setIntensity] = useState<string>(restored?.intensity ?? "medium");
 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [stats, setStats] = useState({ flows: 0, alerts: 0 });
-  const [liveFlows, setLiveFlows] = useState<FlowLog[]>([]);
-  const [events, setEvents] = useState<EventLog[]>([]);
+  const [elapsed, setElapsed] = useState<number>(restored?.elapsed ?? 0);
+  const [stats, setStats] = useState(restored?.stats ?? { flows: 0, alerts: 0 });
+  const [liveFlows, setLiveFlows] = useState<FlowLog[]>(restored?.liveFlows ?? []);
+  const [events, setEvents] = useState<EventLog[]>(restored?.events ?? []);
 
   const [trafficVolumeData, setTrafficVolumeData] = useState<{
     labels: string[];
@@ -111,7 +149,7 @@ export default function SimulationPage() {
     latency: string;
     flows: number;
     alerts: number;
-  } | null>(null);
+  } | null>(restored?.lastRunSummary ?? null);
 
   // Ref to track duration for stop trigger
   const durationRef = useRef(duration);
@@ -158,17 +196,52 @@ export default function SimulationPage() {
     }
   }, [scenarioOptions, scenario]);
 
-  // Clear previous results/logs when switching source tab (web <-> home network)
+  // Clear previous results/logs ONLY on a real source switch (web <-> home network).
+  // Skipping the initial mount is what lets a tab switch restore persisted state
+  // instead of wiping it.
+  const firstSourceRun = useRef(true);
   useEffect(() => {
+    if (firstSourceRun.current) {
+      firstSourceRun.current = false;
+      return;
+    }
     // Default target per source: IoT victim device vs DVWA web target
     setTarget(sourceType === "home_network" ? "172.20.0.50" : "172.20.0.10");
+    setIsRunning(false);
     setLastRunSummary(null);
     setLiveFlows([]);
     setEvents([]);
     setStats({ flows: 0, alerts: 0 });
     setTrafficVolumeData(null);
     setElapsed(0);
+    clearSimState();
   }, [sourceType]);
+
+  // Persist the view so a tab switch (page unmount) can restore it. Keyed by the
+  // source lane; capped lists keep this tiny.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(
+        SIM_STATE_KEY,
+        JSON.stringify({
+          sourceType,
+          scenario,
+          target,
+          duration,
+          intensity,
+          isRunning,
+          stats,
+          elapsed,
+          liveFlows,
+          events,
+          lastRunSummary,
+        })
+      );
+    } catch {
+      /* ignore quota/availability errors */
+    }
+  }, [sourceType, scenario, target, duration, intensity, isRunning, stats, elapsed, liveFlows, events, lastRunSummary]);
 
   // Append clean timeline events
   const addEvent = useCallback((message: string, type: "info" | "threat" | "system" = "info") => {
@@ -283,9 +356,8 @@ export default function SimulationPage() {
             fetchTrafficVolume();
             addEvent(`Resumed active simulation: ${data.attack_type.toUpperCase()}`, "system");
           } else {
-            // If nothing is running, ensure stats are clear
-            setStats({ flows: 0, alerts: 0 });
-            setEvents([]);
+            // Nothing running: keep any restored summary/events so returning to
+            // the tab doesn't wipe a finished run; just refresh the chart.
             fetchTrafficVolume();
           }
         }
@@ -338,6 +410,7 @@ export default function SimulationPage() {
             setTrafficVolumeData(null);
             setEvents([]);
             setLastRunSummary(null);
+            clearSimState();
             return;
           }
 

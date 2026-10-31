@@ -272,6 +272,11 @@ class FlowIngestView(APIView):
                 session.save(update_fields=['flows_generated', 'alerts_triggered'])
 
                 last = matched[-1]
+                # last.timestamp may be a datetime or the raw ISO string the
+                # consumer sent (create() does not coerce the in-memory attr), so
+                # serialize defensively — otherwise this raises and the
+                # simulation_update broadcast below never fires.
+                _ts = last.timestamp
                 latest_flow = {
                     'id': last.id,
                     'src_ip': last.src_ip,
@@ -279,7 +284,7 @@ class FlowIngestView(APIView):
                     'prediction': last.prediction,
                     'confidence': last.confidence,
                     'severity': last.severity,
-                    'timestamp': last.timestamp.isoformat()
+                    'timestamp': _ts.isoformat() if hasattr(_ts, 'isoformat') else str(_ts)
                 }
                 _send_group('simulation', 'simulation_broadcast', {
                     'type': 'simulation_update',
