@@ -38,7 +38,6 @@ flows_iot_test/*.csv
 flows_iot_test/*.csv.tmp
 pcaps_iot_test/*.pcap
 kali_attacks/session.txt
-attack_simulation/*.sh
 cicflowmeter/
 
 # Docker
@@ -54,3 +53,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# Details
+Details.md
+# Files not used
+Notusedfiles/
