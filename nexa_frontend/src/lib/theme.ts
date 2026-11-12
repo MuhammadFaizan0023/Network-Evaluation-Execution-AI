@@ -30,10 +30,13 @@ export const severityColors: Record<string, string> = {
   MEDIUM:   cyberPalette.amber,
   LOW:      cyberPalette.teal,
   NORMAL:   cyberPalette.blue,
+  // Zero-day: low-confidence IoT predictions flagged as "Unknown" attacks.
+  "ZERO-DAY": cyberPalette.purple,
 };
 
 export const getAttackColor = (attackType: string): string => {
   const type = attackType.toLowerCase();
+  if (type.includes("unknown") || type.includes("zero-day")) return cyberPalette.purple;
   if (type.includes("benign") || type.includes("normal")) return cyberPalette.teal;
   if (type.includes("dos") || type.includes("ddos"))      return cyberPalette.red;
   if (type.includes("bruteforce"))                        return cyberPalette.orange;

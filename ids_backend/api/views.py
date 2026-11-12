@@ -82,8 +82,16 @@ def _filter_by_source_and_site(request, qs):
 
 
 def _send_group(group, event_type, payload):
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(group, {'type': event_type, 'payload': payload})
+    # Best-effort WebSocket broadcast. On Windows the dev server can raise
+    # OSError [WinError 6] from async_to_sync; never let a broadcast failure 500
+    # the caller (e.g. /api/flows/ingest/). DB writes are already committed by the
+    # time this runs, and SimulationConsumer.push_periodic re-reads and delivers
+    # them every ~2s, so the UI still updates.
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(group, {'type': event_type, 'payload': payload})
+    except Exception as e:
+        print(f"[_send_group] broadcast skipped ({group}): {e}")
 
 
 class ScanResetView(APIView):

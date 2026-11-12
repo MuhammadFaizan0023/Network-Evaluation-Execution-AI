@@ -8,6 +8,40 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Load environment variables from .env file
 load_dotenv(dotenv_path=BASE_DIR / '.env')
 
+# ── Safe stdout/stderr guard (Windows) ────────────────────────────────────────
+# When the backend runs with an invalid console handle, any print()/stdout write
+# raises OSError [WinError 6] "The handle is invalid", which 500s the request that
+# happens to log (observed on POST /api/flows/ingest/ -> simulation shows nothing).
+# Wrap the std streams so such writes are swallowed instead of crashing a request.
+# No behavioral change when the handle is valid. Pure robustness; not web logic.
+import sys as _sys
+
+
+class _SafeStream:
+    def __init__(self, stream):
+        self._stream = stream
+
+    def write(self, data):
+        try:
+            return self._stream.write(data)
+        except Exception:
+            return len(data) if isinstance(data, (str, bytes)) else 0
+
+    def flush(self):
+        try:
+            return self._stream.flush()
+        except Exception:
+            return None
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+for _std in ('stdout', 'stderr'):
+    _cur = getattr(_sys, _std, None)
+    if _cur is not None and not isinstance(_cur, _SafeStream):
+        setattr(_sys, _std, _SafeStream(_cur))
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-ul@y)e0a(*%0+u2ptv(get@bqm=^4a1nhp1^ov%p*)xje%j(^x')
 

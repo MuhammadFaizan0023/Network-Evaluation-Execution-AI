@@ -15,6 +15,9 @@ from tensorflow.keras.models import load_model
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:29092")
 TOPIC = os.getenv("KAFKA_TOPIC", "flows")
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.80"))
+# IoT lane: if the model's top-class confidence is below this, the flow likely
+# isn't one of the trained classes -> flag it as a possible zero-day ("Unknown").
+ZERO_DAY_THRESHOLD = float(os.getenv("ZERO_DAY_THRESHOLD", "0.30"))
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 SOURCE_TYPE = os.getenv("SOURCE_TYPE", "website")
 REGISTERED_ID = os.getenv("REGISTERED_ID", "1")
@@ -58,6 +61,7 @@ RECOMMENDED_ACTIONS_IOT = {
     "backdoor": "Immediately isolate affected device. Perform factory reset. Update firmware. Review network logs.",
     "ransomware": "Disconnect affected devices immediately. Do not pay ransom. Restore from backup. Report to authorities.",
     "mitm": "Enable encrypted communications on all IoT devices. Implement certificate pinning. Review ARP tables.",
+    "Unknown": "Possible zero-day / novel traffic (model not confident in any known class). Isolate the device and capture full traffic for analysis.",
 }
 
 # ── IOT LABEL MAPPING ─────────────────────────────────────────────────────────
@@ -460,8 +464,17 @@ def predict_iot(df_features, metadata):
             label = "Benign"
             conf = 1.0
 
-        is_alert = label != "Benign" and float(conf) >= CONFIDENCE_THRESHOLD
-        severity = get_severity(label, float(conf))
+        # Zero-day: the model is not confident about ANY class (top-class conf is
+        # below the threshold), so the flow likely isn't one of the trained classes.
+        # Relabel as "Unknown" and tag it as a zero-day alert. Whitelisted IPs are
+        # excluded (their conf was forced to 1.0 above).
+        if float(conf) < ZERO_DAY_THRESHOLD:
+            label = "Unknown"
+            is_alert = True
+            severity = "ZERO-DAY"
+        else:
+            is_alert = label != "Benign" and float(conf) >= CONFIDENCE_THRESHOLD
+            severity = get_severity(label, float(conf))
         results.append(_build_result(label, conf, is_alert, severity, meta, now))
 
     return results
